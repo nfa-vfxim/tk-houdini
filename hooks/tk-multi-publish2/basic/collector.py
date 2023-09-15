@@ -145,7 +145,6 @@ class HoudiniSessionCollector(HookBaseClass):
             # execution time.
             session_item.properties["work_template"] = work_template
             self.logger.debug("Work template defined for Houdini collection.")
-            self.logger.debug("Work template defined for Houdini collection. v2")
 
         self.logger.info("Collected current Houdini session")
         return session_item
@@ -184,7 +183,6 @@ class HoudiniSessionCollector(HookBaseClass):
 
                 # get all the nodes for the category and type
                 nodes = hou.nodeType(node_category, node_type).instances()
-                self.logger.debug(nodes)
 
                 # iterate over each node
                 for node in nodes:
