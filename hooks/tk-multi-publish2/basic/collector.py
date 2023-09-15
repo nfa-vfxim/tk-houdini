@@ -19,6 +19,7 @@ _HOUDINI_OUTPUTS = {
     # rops
     hou.ropNodeTypeCategory(): {
         "alembic": "filename",  # alembic cache
+        "fbx": 'filename', # fbx
         "comp": "copoutput",  # composite
         "ifd": "vm_picture",  # mantra render node
         "opengl": "picture",  # opengl render
@@ -83,12 +84,14 @@ class HoudiniSessionCollector(HookBaseClass):
 
         # remember if we collect any alembic/mantra nodes
         self._alembic_nodes_collected = False
+        self._fbx_nodes_collected = False
         self._mantra_nodes_collected = False
         self._arnold_nodes_collected = False
         self._renderman_nodes_collected = False
 
-        # methods to collect tk alembic/mantra/cache nodes if the app is installed
+        # methods to collect tk alembic/mantra/cache/fbx nodes if the app is installed
         self.collect_tk_alembicnodes(item)
+        self.collect_tk_fbxnodes(item)
         self.collect_tk_mantranodes(item)
         self.collect_tk_arnoldnodes(item)
         self.collect_tk_rendermannodes(item)
@@ -159,6 +162,13 @@ class HoudiniSessionCollector(HookBaseClass):
                     self.logger.debug(
                         "Skipping regular alembic node collection since tk "
                         "alembic nodes were collected. "
+                    )
+                    continue
+
+                if node_type == "fbx" and self._fbx_nodes_collected:
+                    self.logger.debug(
+                        "Skipping regular fbx node collection since tk "
+                        "fbx nodes were collected. "
                     )
                     continue
 
@@ -398,6 +408,64 @@ class HoudiniSessionCollector(HookBaseClass):
 
             self._alembic_nodes_collected = True
 
+    def collect_tk_fbxnodes(self, parent_item):
+        """
+        Checks for an installed `tk-houdini-fbxnode` app. If installed, will
+        search for instances of the node in the current session and create an
+        item for each one with an output on disk.
+        :param parent_item: The item to parent new items to.
+        """
+        
+        publisher = self.parent
+        engine = publisher.engine
+
+        fbxnode_app = engine.apps.get("tk-houdini-fbxnode")
+        if not fbxnode_app:
+            self.logger.debug(
+                "The tk-houdini-fbxnode app is not installed. "
+                "Will not attempt to collect those nodes."
+            )
+            return
+
+        try:
+            tk_fbx_nodes = fbxnode_app.get_nodes()
+        except AttributeError:
+            self.logger.warning(
+                "Unable to query the session for tk-houdini-fbxnode "
+                "instances. It looks like perhaps an older version of the "
+                "app is in use which does not support querying the nodes. "
+                "Consider updating the app to allow publishing their outputs."
+            )
+            return
+
+        # retrieve the work file template defined by the app. we'll set this
+        # on the collected fbxnode items for use during publishing.
+        work_template = fbxnode_app.get_work_file_template()
+
+        for node in tk_fbx_nodes:
+
+            out_path = fbxnode_app.get_output_path(node)
+
+            if not os.path.exists(out_path):
+                continue
+
+            self.logger.info("Processing sgtk_fbx node: %s" % (node.path(),))
+
+            # allow the base class to collect and create the item. it
+            # should know how to handle the output path
+            item = super(HoudiniSessionCollector, self)._collect_file(
+                parent_item, out_path
+            )
+
+            # the item has been created. update the display name to
+            # include the node path to make it clear to the user how it
+            # was collected within the current session.
+            item.name = "%s (%s)" % (item.name, node.path())
+
+            if work_template:
+                item.properties["work_template"] = work_template
+
+            self._fbx_nodes_collected = True
     def collect_tk_mantranodes(self, parent_item):
         """
         Checks for an installed `tk-houdini-mantranode` app. If installed, will
