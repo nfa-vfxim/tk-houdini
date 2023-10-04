@@ -660,7 +660,7 @@ class HoudiniSessionCollector(HookBaseClass):
 
         # Get the work file template from the app
         work_template = app.get_work_template()
-        publish_template = app.get_publish_template()
+        render_template = app.get_render_template()
 
         frame_range = hou.playbar.playbackRange()
         first_frame = int(frame_range[0])
@@ -670,46 +670,55 @@ class HoudiniSessionCollector(HookBaseClass):
         for node in nodes:
 
             # Get the output path on the RenderMan node
-            output_path = app.get_output_path(node)
+            try:
+                output_paths = app.get_output_paths(node)
+            except Exception as e:
+                self.logger.error(f"Could not receive renderman render paths. {e}")
+                continue
 
             # Check if there is an output path
-            if len(output_path) > 0:
-                # If no output path found, skip collector
-                if not os.path.exists(output_path):
-                    continue
+            if len(output_paths) > 0:
+                for output_path in output_paths:
+                    # If stats output, skip collector
+                    if output_path.endswith(".xml"):
+                        continue
 
-                # Make sure file has not already been published
-                if not app.handler.get_published_status(node):
-                    self.logger.info("Processing sgtk_hdprman node: %s" % node.path())
+                    # If no output path found, skip collector
+                    if not os.path.exists(output_path.replace("$F4", f"{first_frame:04}")):
+                        continue
 
-                    # Create the item to publish
-                    item = super(HoudiniSessionCollector, self)._collect_file(
-                        parent_item, output_path, frame_sequence=True
-                    )
+                    # Make sure file has not already been published
+                    if not app.get_published_status(node):
+                        self.logger.info("Processing sgtk_hdprman node: %s" % node.path())
 
-                    # Set the name for the publisher UI
-                    render_name = app.get_render_name(node)
-                    node_path = os.path.basename(node.path())
-                    item.name = "Render (%s)" % render_name + ", " + node_path
+                        # Create the item to publish
+                        item = super(HoudiniSessionCollector, self)._collect_file(
+                            parent_item, output_path, frame_sequence=True
+                        )
 
-                    # Add the work template to the list
-                    item.properties["work_template"] = work_template
-                    item.properties["publish_template"] = publish_template
-                    item.properties["first_frame"] = first_frame
-                    item.properties["last_frame"] = last_frame
+                        # Set the name for the publisher UI
+                        fields = render_template.get_fields(output_path)
+                        node_path = os.path.basename(node.path())
+                        item.name = f"Render ({fields.get('output')}, {fields.get('aov_name')}) {node_path}"
 
-                    # Generate the publish name, and set it
-                    publish_name = publisher.util.get_publish_name(
-                        output_path, sequence=True
-                    )
-                    self.logger.info("Setting publish name to %s" % publish_name)
-                    item.properties.publish_name = publish_name
+                        # Add the work template to the list
+                        item.properties["work_template"] = work_template
+                        item.properties["publish_template"] = render_template
+                        item.properties["first_frame"] = first_frame
+                        item.properties["last_frame"] = last_frame
 
-                    # Check all the filter parameters for files
-                    self.__collect_tk_rendermanfilters(node, item, app, work_template)
+                        # Generate the publish name, and set it
+                        publish_name = publisher.util.get_publish_name(
+                            output_path, sequence=True
+                        )
+                        self.logger.info("Setting publish name to %s" % publish_name)
+                        item.properties.publish_name = publish_name
 
-                    # Return a true value because files have been found
-                    self._renderman_nodes_collected = True
+                        # Check all the filter parameters for files
+                        # self.__collect_tk_rendermanfilters(node, item, app, work_template)
+
+                        # Return a true value because files have been found
+                        self._renderman_nodes_collected = True
 
     def __collect_tk_rendermanfilters(self, node, parent_item, app, work_template):
         # This function will scan every filter that is activated for files,
