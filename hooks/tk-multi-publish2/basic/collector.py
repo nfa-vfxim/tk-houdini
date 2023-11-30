@@ -663,12 +663,12 @@ class HoudiniSessionCollector(HookBaseClass):
         work_template = app.get_work_template()
         render_template = app.get_render_template()
 
-        frame_range = hou.playbar.playbackRange()
-        first_frame = int(frame_range[0])
-        last_frame = int(frame_range[1])
-
         # Iterate trough every node that has been found
         for node in nodes:
+            # Get the output frame range on the RenderMan node
+            frame_range = app.get_output_range(node)
+            first_frame = int(frame_range[0])
+            last_frame = int(frame_range[1])
 
             # Get the output path on the RenderMan node
             try:
@@ -685,7 +685,9 @@ class HoudiniSessionCollector(HookBaseClass):
                         continue
 
                     # If no output path found, skip collector
-                    if not os.path.exists(output_path.replace("$F4", f"{first_frame:04}")):
+                    if not os.path.exists(
+                        output_path.replace("$F4", f"{first_frame:04}")
+                    ):
                         continue
 
                     # Make sure file has not already been published
