@@ -19,7 +19,7 @@ _HOUDINI_OUTPUTS = {
     # rops
     hou.ropNodeTypeCategory(): {
         "alembic": "filename",  # alembic cache
-        "fbx": 'filename', # fbx
+        "fbx": "filename",  # fbx
         "comp": "copoutput",  # composite
         "ifd": "vm_picture",  # mantra render node
         "opengl": "picture",  # opengl render
@@ -157,7 +157,6 @@ class HoudiniSessionCollector(HookBaseClass):
 
         for node_category in _HOUDINI_OUTPUTS:
             for node_type in _HOUDINI_OUTPUTS[node_category]:
-
                 if node_type == "alembic" and self._alembic_nodes_collected:
                     self.logger.debug(
                         "Skipping regular alembic node collection since tk "
@@ -181,33 +180,34 @@ class HoudiniSessionCollector(HookBaseClass):
 
                 path_parm_name = _HOUDINI_OUTPUTS[node_category][node_type]
 
-                # get all the nodes for the category and type
-                nodes = hou.nodeType(node_category, node_type).instances()
+                # check if node type exists
+                if hou.nodeType(node_category, node_type):
+                    # get all the nodes for the category and type
+                    nodes = hou.nodeType(node_category, node_type).instances()
 
-                # iterate over each node
-                for node in nodes:
+                    # iterate over each node
+                    for node in nodes:
+                        # get the evaluated path parm value
+                        path = node.parm(path_parm_name).eval()
 
-                    # get the evaluated path parm value
-                    path = node.parm(path_parm_name).eval()
+                        # ensure the output path exists
+                        if not os.path.exists(path):
+                            continue
 
-                    # ensure the output path exists
-                    if not os.path.exists(path):
-                        continue
+                        self.logger.info(
+                            "Processing %s node: %s" % (node_type, node.path())
+                        )
 
-                    self.logger.info(
-                        "Processing %s node: %s" % (node_type, node.path())
-                    )
+                        # allow the base class to collect and create the item. it
+                        # should know how to handle the output path
+                        item = super(HoudiniSessionCollector, self)._collect_file(
+                            parent_item, path, frame_sequence=True
+                        )
 
-                    # allow the base class to collect and create the item. it
-                    # should know how to handle the output path
-                    item = super(HoudiniSessionCollector, self)._collect_file(
-                        parent_item, path, frame_sequence=True
-                    )
-
-                    # the item has been created. update the display name to
-                    # include the node path to make it clear to the user how it
-                    # was collected within the current session.
-                    item.name = "%s (%s)" % (item.name, node.path())
+                        # the item has been created. update the display name to
+                        # include the node path to make it clear to the user how it
+                        # was collected within the current session.
+                        item.name = "%s (%s)" % (item.name, node.path())
 
     def collect_tk_cachenodes(self, parent_item):
         """
@@ -242,7 +242,6 @@ class HoudiniSessionCollector(HookBaseClass):
         publish_template = cachenode_app.get_publish_file_template()
 
         for node in tk_cache_nodes:
-
             out_path = cachenode_app.get_output_path(node)
 
             self.logger.debug("out_path is %s" % (out_path))
@@ -307,7 +306,6 @@ class HoudiniSessionCollector(HookBaseClass):
         publish_template = usdrop_app.get_publish_file_template()
 
         for node in tk_usdrop_nodes:
-
             output_path = usdrop_app.get_output_path(node)
 
             self.logger.debug("out_path is %s" % (output_path))
@@ -384,7 +382,6 @@ class HoudiniSessionCollector(HookBaseClass):
         work_template = alembicnode_app.get_work_file_template()
 
         for node in tk_alembic_nodes:
-
             out_path = alembicnode_app.get_output_path(node)
 
             if not os.path.exists(out_path):
@@ -415,7 +412,7 @@ class HoudiniSessionCollector(HookBaseClass):
         item for each one with an output on disk.
         :param parent_item: The item to parent new items to.
         """
-        
+
         publisher = self.parent
         engine = publisher.engine
 
@@ -443,7 +440,6 @@ class HoudiniSessionCollector(HookBaseClass):
         work_template = fbxnode_app.get_work_file_template()
 
         for node in tk_fbx_nodes:
-
             out_path = fbxnode_app.get_output_path(node)
 
             if not os.path.exists(out_path):
@@ -466,6 +462,7 @@ class HoudiniSessionCollector(HookBaseClass):
                 item.properties["work_template"] = work_template
 
             self._fbx_nodes_collected = True
+
     def collect_tk_mantranodes(self, parent_item):
         """
         Checks for an installed `tk-houdini-mantranode` app. If installed, will
@@ -501,7 +498,6 @@ class HoudiniSessionCollector(HookBaseClass):
         work_template = mantranode_app.get_work_file_template()
 
         for node in tk_mantra_nodes:
-
             out_path = mantranode_app.get_output_path(node)
 
             if not os.path.exists(out_path):
@@ -561,7 +557,6 @@ class HoudiniSessionCollector(HookBaseClass):
 
         # run collection on every node instance found
         for node in nodes:
-
             out_path = app.handler.getOutputPath(node)
 
             if not os.path.exists(out_path):
@@ -662,12 +657,12 @@ class HoudiniSessionCollector(HookBaseClass):
         work_template = app.get_work_template()
         render_template = app.get_render_template()
 
-        frame_range = hou.playbar.playbackRange()
-        first_frame = int(frame_range[0])
-        last_frame = int(frame_range[1])
-
         # Iterate trough every node that has been found
         for node in nodes:
+            # Get the output frame range on the RenderMan node
+            frame_range = app.get_output_range(node)
+            first_frame = int(frame_range[0])
+            last_frame = int(frame_range[1])
 
             # Get the output path on the RenderMan node
             try:
@@ -684,17 +679,36 @@ class HoudiniSessionCollector(HookBaseClass):
                         continue
 
                     # If no output path found, skip collector
-                    if not os.path.exists(output_path.replace("$F4", f"{first_frame:04}")):
+                    if not os.path.exists(
+                        output_path.replace("$F4", f"{first_frame:04}")
+                    ):
                         continue
 
                     # Make sure file has not already been published
                     if not app.get_published_status(node):
-                        self.logger.info("Processing sgtk_hdprman node: %s" % node.path())
+                        self.logger.info(
+                            "Processing sgtk_hdprman node: %s" % node.path()
+                        )
 
                         # Create the item to publish
                         item = super(HoudiniSessionCollector, self)._collect_file(
                             parent_item, output_path, frame_sequence=True
                         )
+
+                        # Set the item type
+                        item_info = super(HoudiniSessionCollector, self)._get_item_info(
+                            output_path
+                        )
+                        item.type = "%s.sequence" % (item_info["item_type"],)
+                        item.type_display = "%s Sequence" % (item_info["type_display"],)
+
+                        item.set_icon_from_path(item_info["icon_path"])
+
+                        # if the supplied path is an image, use the path as # the thumbnail.
+                        item.set_thumbnail_from_path(output_path)
+
+                        # disable thumbnail creation since we get it for free
+                        item.thumbnail_enabled = False
 
                         # Set the name for the publisher UI
                         fields = render_template.get_fields(output_path)
@@ -706,6 +720,7 @@ class HoudiniSessionCollector(HookBaseClass):
                         item.properties["publish_template"] = render_template
                         item.properties["first_frame"] = first_frame
                         item.properties["last_frame"] = last_frame
+                        item.properties["colorspace"] = "ACES - ACEScg"
 
                         # Generate the publish name, and set it
                         publish_name = publisher.util.get_publish_name(
