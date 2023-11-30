@@ -181,33 +181,34 @@ class HoudiniSessionCollector(HookBaseClass):
 
                 path_parm_name = _HOUDINI_OUTPUTS[node_category][node_type]
 
-                # get all the nodes for the category and type
-                nodes = hou.nodeType(node_category, node_type).instances()
+                # check if node type exists
+                if hou.nodeType(node_category, node_type):
+                    # get all the nodes for the category and type
+                    nodes = hou.nodeType(node_category, node_type).instances()
 
-                # iterate over each node
-                for node in nodes:
+                    # iterate over each node
+                    for node in nodes:
+                        # get the evaluated path parm value
+                        path = node.parm(path_parm_name).eval()
 
-                    # get the evaluated path parm value
-                    path = node.parm(path_parm_name).eval()
+                        # ensure the output path exists
+                        if not os.path.exists(path):
+                            continue
 
-                    # ensure the output path exists
-                    if not os.path.exists(path):
-                        continue
+                        self.logger.info(
+                            "Processing %s node: %s" % (node_type, node.path())
+                        )
 
-                    self.logger.info(
-                        "Processing %s node: %s" % (node_type, node.path())
-                    )
+                        # allow the base class to collect and create the item. it
+                        # should know how to handle the output path
+                        item = super(HoudiniSessionCollector, self)._collect_file(
+                            parent_item, path, frame_sequence=True
+                        )
 
-                    # allow the base class to collect and create the item. it
-                    # should know how to handle the output path
-                    item = super(HoudiniSessionCollector, self)._collect_file(
-                        parent_item, path, frame_sequence=True
-                    )
-
-                    # the item has been created. update the display name to
-                    # include the node path to make it clear to the user how it
-                    # was collected within the current session.
-                    item.name = "%s (%s)" % (item.name, node.path())
+                        # the item has been created. update the display name to
+                        # include the node path to make it clear to the user how it
+                        # was collected within the current session.
+                        item.name = "%s (%s)" % (item.name, node.path())
 
     def collect_tk_cachenodes(self, parent_item):
         """
