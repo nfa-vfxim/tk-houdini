@@ -768,3 +768,90 @@ class HoudiniSessionCollector(HookBaseClass):
             self.logger.info("Setting publish name to %s" % sub_publish_name)
 
             subitem.properties.publish_name = sub_publish_name
+
+    def collect_tk_karmanodes(self, parent_item):
+        # This function will check all the SGTK Karma nodes (in Solaris) for files,
+        # and if found, add them to the collector
+
+        # Get Engine and Publisher
+        publisher = self.parent
+        engine = publisher.engine
+
+        # Check if Karma app is installed
+        app = engine.apps.get("tk-houdini-karma")
+        if not app:
+            self.logger.debug(
+                "The tk-houdini-karma app is not installed. Skipping collection of those nodes."
+            )
+            return
+
+        # Get all the Karma node instances, if no found, skip collector
+        try:
+            nodes = app.get_all_karma_nodes()
+        except Exception as e:
+            self.logger.error("Could not receive Karma node instances. %s" % str(e))
+            return
+
+        # Get the work file template from the app
+        work_template = app.get_work_template()
+        render_template = app.get_render_template()
+
+        frame_range = hou.playbar.playbackRange()
+        first_frame = int(frame_range[0])
+        last_frame = int(frame_range[1])
+
+        # Iterate trough every node that has been found
+        for node in nodes:
+            # Get the output path on the Karma node
+            try:
+                output_paths = app.get_output_paths(node)
+            except Exception as e:
+                self.logger.error(f"Could not receive Karma render paths. {e}")
+                continue
+
+            # Check if there is an output path
+
+            if len(output_paths) > 0:
+                for output_path in output_paths:
+                    # If stats output, skip collector
+                    if output_path.endswith(".xml"):
+                        continue
+
+                    # If no output path found, skip collector
+                    if not os.path.exists(
+                        output_path.replace("$F4", f"{first_frame:04}")
+                    ):
+                        continue
+
+                    # Make sure file has not already been published
+                    if not app.get_published_status(node):
+                        self.logger.info(
+                            "Processing SGTK_Karma_Render node: %s" % node.path()
+                        )
+
+                        # Create the item to publish
+                        item = super(HoudiniSessionCollector, self)._collect_file(
+                            parent_item, output_path, frame_sequence=True
+                        )
+
+                        # Set the name for the publisher UI
+                        fields = render_template.get_fields(output_path)
+                        node_path = os.path.basename(node.path())
+                        item.name = f"Render ({fields.get('output')}, {fields.get('aov_name')}) {node_path}"
+
+                        # Add the work template to the list
+                        item.properties["work_template"] = work_template
+                        item.properties["publish_template"] = render_template
+                        item.properties["first_frame"] = first_frame
+                        item.properties["last_frame"] = last_frame
+
+                        # Generate the publish name, and set it
+                        publish_name = publisher.util.get_publish_name(
+                            output_path, sequence=True
+                        )
+                        self.logger.info("Setting publish name to %s" % publish_name)
+                        item.properties.publish_name = publish_name
+
+                        # Check all the filter parameters for files
+                        # Return a true value because files have been found
+                        self._karma_nodes_collected = True
