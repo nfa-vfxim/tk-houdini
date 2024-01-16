@@ -88,6 +88,7 @@ class HoudiniSessionCollector(HookBaseClass):
         self._mantra_nodes_collected = False
         self._arnold_nodes_collected = False
         self._renderman_nodes_collected = False
+        self._karma_nodes_collected = False
 
         # methods to collect tk alembic/mantra/cache/fbx nodes if the app is installed
         self.collect_tk_alembicnodes(item)
@@ -95,6 +96,7 @@ class HoudiniSessionCollector(HookBaseClass):
         self.collect_tk_mantranodes(item)
         self.collect_tk_arnoldnodes(item)
         self.collect_tk_rendermannodes(item)
+        self.collect_tk_karmanodes(item)
         self.collect_tk_cachenodes(item)
         self.collect_tk_usdropnodes(item)
 
