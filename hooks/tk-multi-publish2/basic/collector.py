@@ -798,9 +798,7 @@ class HoudiniSessionCollector(HookBaseClass):
         work_template = app.get_work_template()
         render_template = app.get_render_template()
 
-        frame_range = hou.playbar.playbackRange()
-        first_frame = int(frame_range[0])
-        last_frame = int(frame_range[1])
+        # Get the output frame range on the RenderMan node
 
         # Iterate trough every node that has been found
         for node in nodes:
@@ -811,8 +809,11 @@ class HoudiniSessionCollector(HookBaseClass):
                 self.logger.error(f"Could not receive Karma render paths. {e}")
                 continue
 
-            # Check if there is an output path
+            frame_range = app.get_output_range(node)
+            first_frame = int(frame_range[0])
+            last_frame = int(frame_range[1])
 
+            # Check if there is an output path
             if len(output_paths) > 0:
                 for output_path in output_paths:
                     # If stats output, skip collector
@@ -836,6 +837,21 @@ class HoudiniSessionCollector(HookBaseClass):
                             parent_item, output_path, frame_sequence=True
                         )
 
+                        # Set the item type
+                        item_info = super(HoudiniSessionCollector, self)._get_item_info(
+                            output_path
+                        )
+                        item.type = "%s.sequence" % (item_info["item_type"],)
+                        item.type_display = "%s Sequence" % (item_info["type_display"],)
+
+                        item.set_icon_from_path(item_info["icon_path"])
+
+                        # if the supplied path is an image, use the path as # the thumbnail.
+                        item.set_thumbnail_from_path(output_path)
+
+                        # disable thumbnail creation since we get it for free
+                        item.thumbnail_enabled = False
+
                         # Set the name for the publisher UI
                         fields = render_template.get_fields(output_path)
                         node_path = os.path.basename(node.path())
@@ -846,6 +862,7 @@ class HoudiniSessionCollector(HookBaseClass):
                         item.properties["publish_template"] = render_template
                         item.properties["first_frame"] = first_frame
                         item.properties["last_frame"] = last_frame
+                        item.properties["colorspace"] = "ACES - ACEScg"
 
                         # Generate the publish name, and set it
                         publish_name = publisher.util.get_publish_name(
@@ -854,6 +871,5 @@ class HoudiniSessionCollector(HookBaseClass):
                         self.logger.info("Setting publish name to %s" % publish_name)
                         item.properties.publish_name = publish_name
 
-                        # Check all the filter parameters for files
                         # Return a true value because files have been found
                         self._karma_nodes_collected = True
