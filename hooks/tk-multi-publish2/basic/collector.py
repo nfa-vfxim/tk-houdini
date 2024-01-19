@@ -88,6 +88,7 @@ class HoudiniSessionCollector(HookBaseClass):
         self._mantra_nodes_collected = False
         self._arnold_nodes_collected = False
         self._renderman_nodes_collected = False
+        self._karma_nodes_collected = False
 
         # methods to collect tk alembic/mantra/cache/fbx nodes if the app is installed
         self.collect_tk_alembicnodes(item)
@@ -95,6 +96,7 @@ class HoudiniSessionCollector(HookBaseClass):
         self.collect_tk_mantranodes(item)
         self.collect_tk_arnoldnodes(item)
         self.collect_tk_rendermannodes(item)
+        self.collect_tk_karmanodes(item)
         self.collect_tk_cachenodes(item)
         self.collect_tk_usdropnodes(item)
 
@@ -768,3 +770,105 @@ class HoudiniSessionCollector(HookBaseClass):
             self.logger.info("Setting publish name to %s" % sub_publish_name)
 
             subitem.properties.publish_name = sub_publish_name
+
+    def collect_tk_karmanodes(self, parent_item):
+        # This function will check all the SGTK Karma nodes (in Solaris) for files,
+        # and if found, add them to the collector
+
+        # Get Engine and Publisher
+        publisher = self.parent
+        engine = publisher.engine
+
+        # Check if Karma app is installed
+        app = engine.apps.get("tk-houdini-karma")
+        if not app:
+            self.logger.debug(
+                "The tk-houdini-karma app is not installed. Skipping collection of those nodes."
+            )
+            return
+
+        # Get all the Karma node instances, if no found, skip collector
+        try:
+            nodes = app.get_all_karma_nodes()
+        except Exception as e:
+            self.logger.error("Could not receive Karma node instances. %s" % str(e))
+            return
+
+        # Get the work file template from the app
+        work_template = app.get_work_template()
+        render_template = app.get_render_template()
+
+        # Iterate trough every node that has been found
+        for node in nodes:
+            # Get the output path on the Karma node
+            try:
+                output_paths = app.get_output_paths(node)
+            except Exception as e:
+                self.logger.error(f"Could not receive Karma render paths. {e}")
+                continue
+
+            # Get the output frame range on the Karma node
+            frame_range = app.get_output_range(node)
+            first_frame = int(frame_range[0])
+            last_frame = int(frame_range[1])
+
+            # Check if there is an output path
+            if len(output_paths) > 0:
+                for output_path in output_paths:
+                    # If stats output, skip collector
+                    if output_path.endswith(".xml"):
+                        continue
+
+                    # If no output path found, skip collector
+                    if not os.path.exists(
+                        output_path.replace("$F4", f"{first_frame:04}")
+                    ):
+                        continue
+
+                    # Make sure file has not already been published
+                    if not app.get_published_status(node):
+                        self.logger.info(
+                            "Processing SGTK_Karma_Render node: %s" % node.path()
+                        )
+
+                        # Create the item to publish
+                        item = super(HoudiniSessionCollector, self)._collect_file(
+                            parent_item, output_path, frame_sequence=True
+                        )
+
+                        # Set the item type
+                        item_info = super(HoudiniSessionCollector, self)._get_item_info(
+                            output_path
+                        )
+                        item.type = "%s.sequence" % (item_info["item_type"],)
+                        item.type_display = "%s Sequence" % (item_info["type_display"],)
+
+                        item.set_icon_from_path(item_info["icon_path"])
+
+                        # if the supplied path is an image, use the path as # the thumbnail.
+                        item.set_thumbnail_from_path(output_path)
+
+                        # disable thumbnail creation since we get it for free
+                        item.thumbnail_enabled = False
+
+                        # Set the name for the publisher UI
+                        fields = render_template.get_fields(output_path)
+                        node_path = os.path.basename(node.path())
+                        item.name = f"Render ({fields.get('output')}, {fields.get('aov_name')}) {node_path}"
+
+                        # Add the work template to the list
+                        item.properties["work_template"] = work_template
+                        item.properties["publish_template"] = render_template
+                        item.properties["first_frame"] = first_frame
+                        item.properties["last_frame"] = last_frame
+                        item.properties["colorspace"] = "ACES - ACEScg"
+
+                        # Generate the publish name, and set it
+                        publish_name = publisher.util.get_publish_name(
+                            output_path, sequence=True
+                        )
+                        self.logger.info("Setting publish name to %s" % publish_name)
+                        item.properties.publish_name = publish_name
+
+                        # Return a true value because files have been found
+                        self._karma_nodes_collected = True
