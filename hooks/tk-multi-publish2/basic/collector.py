@@ -798,8 +798,6 @@ class HoudiniSessionCollector(HookBaseClass):
         work_template = app.get_work_template()
         render_template = app.get_render_template()
 
-        # Get the output frame range on the RenderMan node
-
         # Iterate trough every node that has been found
         for node in nodes:
             # Get the output path on the Karma node
@@ -809,6 +807,7 @@ class HoudiniSessionCollector(HookBaseClass):
                 self.logger.error(f"Could not receive Karma render paths. {e}")
                 continue
 
+            # Get the output frame range on the Karma node
             frame_range = app.get_output_range(node)
             first_frame = int(frame_range[0])
             last_frame = int(frame_range[1])
