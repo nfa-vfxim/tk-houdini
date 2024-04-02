@@ -85,6 +85,18 @@ configuration:
                 name: { type: str }
                 app_instance: { type: str }
 
+    review_field:
+        type: str
+        description: "Template field to match for enabling \"Submit for Review\" when publishing image sequences."
+
+    review_field_matches:
+        type: list
+        description: "Matches for the review template field value to enable \"Submit for Review\"."
+        allows_empty: True
+        default_value: ["main", "beauty", "master"]
+        values:
+            type: str
+
 # the Shotgun fields that this engine needs in order to operate correctly
 requires_shotgun_fields:
 

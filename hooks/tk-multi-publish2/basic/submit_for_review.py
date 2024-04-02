@@ -28,9 +28,7 @@ class HoudiniDeadlineSubmitForReviewPlugin(HookBaseClass):
         """
 
         # look for icon one level up from this hook's folder in "icons" folder
-        return os.path.join(
-            self.disk_location, os.pardir, "icons", "review.png"
-        )
+        return os.path.join(self.disk_location, os.pardir, "icons", "review.png")
 
     @property
     def name(self):
@@ -131,22 +129,19 @@ class HoudiniDeadlineSubmitForReviewPlugin(HookBaseClass):
         if review_submission_app is None:
             accepted = False
             self.logger.debug(
-                "Review submission app is not available. skipping item: %s"
-                % (item.properties["publish_name"],)
+                f"Review submission app is not available. skipping item: {item.properties['publish_name']}"
             )
         if item.properties.get("first_frame") is None:
             accepted = False
             self.logger.debug(
                 "'first_frame' property is not defined on the item. "
-                "Item will be skipped: %s."
-                % (item.properties["publish_name"],)
+                f"Item will be skipped: {item.properties['publish_name']}."
             )
         if item.properties.get("last_frame") is None:
             accepted = False
             self.logger.debug(
                 "'last_frame' property is not defined on the item. "
-                "Item will be skipped: %s."
-                % (item.properties["publish_name"],)
+                f"Item will be skipped: {item.properties['publish_name']}."
             )
         path = item.properties.get("path").replace(os.sep, "/")
 
@@ -154,33 +149,35 @@ class HoudiniDeadlineSubmitForReviewPlugin(HookBaseClass):
             accepted = False
             self.logger.debug(
                 "'path' property is not defined on the item. "
-                "Item will be skipped: %s."
-                % (item.properties["publish_name"],)
+                f"Item will be skipped: {item.properties['publish_name']}."
             )
         # Determine if item should be checked or not
         output_template = item.properties.get("publish_template")
         if output_template is None:
             self.logger.debug(
                 "No output template found."
-                "Item will be skipped: %s." % (item.properties["publish_name"])
+                f"Item will be skipped: {item.properties['publish_name']}."
             )
             accepted = False
 
         if accepted:
             # log the accepted file and display a button to reveal it in the fs
             self.logger.info(
-                "Submit for review plugin accepted: %s" % (path,),
+                f"Submit for review plugin accepted: {path}",
                 extra={"action_show_folder": {"path": path}},
             )
 
             output_fields = output_template.get_fields(path)
 
-            render_name = output_fields.get("name")
+            review_field = self.parent.engine.get_setting("review_field")
+            review_field_matches = self.parent.engine.get_setting(
+                "review_field_matches"
+            )
 
-            checked_filenames = ("main", "beauty", "master")
-
-            if render_name in checked_filenames:
-                checked = True
+            # Check if aov_name exists in the template, and if it should be enabled
+            if review_field in output_fields:
+                if output_fields.get(review_field) in review_field_matches:
+                    checked = True
 
         return {"accepted": accepted, "checked": checked}
 
@@ -214,9 +211,8 @@ class HoudiniDeadlineSubmitForReviewPlugin(HookBaseClass):
         if sg_publish_data is None:
             raise Exception(
                 "'sg_publish_data' was not found in the item's properties. "
-                "Review Submission for '%s' failed. This property must "
+                f"Review Submission for '{render_path}' failed. This property must "
                 "be set by a publish plugin that has run before this one."
-                % render_path
             )
 
         tk_multi_deadlinereviewsubmission = self.parent.engine.apps.get(
@@ -227,15 +223,15 @@ class HoudiniDeadlineSubmitForReviewPlugin(HookBaseClass):
         if publish_template is None:
             raise Exception(
                 "'work_template' property is missing from item's properties. "
-                "Review submission for '%s' failed." % render_path
+                f"Review submission for '{render_path}' failed."
             )
         if not publish_template.validate(render_path):
             raise Exception(
-                "'%s' did not match the render template. "
-                "Review submission failed." % render_path
+                f"'{render_path}' did not match the render template. "
+                "Review submission failed."
             )
 
-        self.logger.info("Got render path %s" % str(render_path))
+        self.logger.info(f"Got render path {render_path}")
         render_path_fields = publish_template.get_fields(render_path)
 
         first_frame = item.properties.get("first_frame")
@@ -253,8 +249,7 @@ class HoudiniDeadlineSubmitForReviewPlugin(HookBaseClass):
 
         if version:
             self.logger.info(
-                "File sequence submitted for review to Deadline: %s"
-                % (render_path,),
+                f"File sequence submitted for review to Deadline: {render_path}",
                 extra={
                     "action_show_in_ShotGrid": {
                         "label": "Show Version",
