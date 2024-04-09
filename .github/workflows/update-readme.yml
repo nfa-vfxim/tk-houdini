@@ -1,0 +1,13 @@
+name: Update README.md
+
+on:
+  push:
+    paths:
+      - "info.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  call-workflow:
+    uses: MaximumFX/tk-readme-generator/.github/workflows/update-readme.yml@main
