@@ -2,6 +2,8 @@ name: Update README.md
 
 on:
   push:
+    branches:
+      - dev
     paths:
       - "info.yml"
 
