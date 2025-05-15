@@ -2,7 +2,6 @@
 [![GitHub issues](https://img.shields.io/github/issues/nfa-vfxim/tk-houdini)](https://github.com/nfa-vfxim/tk-houdini/issues) 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-
 # ShotGrid Engine for Houdini <img src="icon_256.png" alt="Icon" height="24"/>
 
 ShotGrid Pipeline Toolkit integration in Houdini
