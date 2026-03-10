@@ -14,6 +14,9 @@ import sys
 import sgtk
 from sgtk.platform import SoftwareLauncher, SoftwareVersion, LaunchInformation
 
+# Houdini versions compatibility constants
+VERSION_OLDEST_COMPATIBLE = (18, 5)
+
 
 class HoudiniLauncher(SoftwareLauncher):
     """
@@ -37,10 +40,10 @@ class HoudiniLauncher(SoftwareLauncher):
     # strings, these allow us to alter the regex matching for any of the
     # variable components of the path in one place
     COMPONENT_REGEX_LOOKUP = {
-        "version": "[\d.]+",
-        "product": "[\w\s]+",
-        "executable": "[\w]+",
-        "version_back": "[\d.]+",
+        "version": "[\\d.]+",
+        "product": "[\\w\\s]+",
+        "executable": "[\\w]+",
+        "version_back": "[\\d.]+",
     }
 
     # This dictionary defines a list of executable template strings for each
@@ -69,7 +72,7 @@ class HoudiniLauncher(SoftwareLauncher):
     @property
     def minimum_supported_version(self):
         """The minimum supported Houdini version."""
-        return "14.0"
+        return "{}.{}".format(*VERSION_OLDEST_COMPATIBLE[0:2])
 
     def prepare_launch(self, exec_path, args, file_to_open=None):
         """
@@ -141,7 +144,7 @@ class HoudiniLauncher(SoftwareLauncher):
 
         supported_sw_versions = []
         for sw_version in self._find_software():
-            (supported, reason) = self._is_supported(sw_version)
+            supported, reason = self._is_supported(sw_version)
             if supported:
                 supported_sw_versions.append(sw_version)
             else:
@@ -161,11 +164,11 @@ class HoudiniLauncher(SoftwareLauncher):
         executable_templates = self.EXECUTABLE_TEMPLATES.get(
             "darwin"
             if sgtk.util.is_macos()
-            else "win32"
-            if sgtk.util.is_windows()
-            else "linux2"
-            if sgtk.util.is_linux()
-            else []
+            else (
+                "win32"
+                if sgtk.util.is_windows()
+                else "linux2" if sgtk.util.is_linux() else []
+            )
         )
 
         # all the discovered executables
@@ -180,7 +183,7 @@ class HoudiniLauncher(SoftwareLauncher):
             )
 
             # Extract all products from that executable.
-            for (executable_path, key_dict) in executable_matches:
+            for executable_path, key_dict in executable_matches:
 
                 # extract the matched keys form the key_dict (default to None if
                 # not included)
