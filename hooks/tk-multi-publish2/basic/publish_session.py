@@ -12,8 +12,6 @@ import os
 import hou
 import sgtk
 
-from tank_vendor import six
-
 HookBaseClass = sgtk.get_hook_baseclass()
 
 
@@ -41,8 +39,8 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
         loader_url = "https://help.autodesk.com/view/SGDEV/ENU/?contextId=PC_APP_LOADER"
 
         return """
-        Publishes the file to ShotGrid. A <b>Publish</b> entry will be
-        created in ShotGrid which will include a reference to the file's current
+        Publishes the file to Flow Production Tracking. A <b>Publish</b> entry will be
+        created in Flow Production Tracking which will include a reference to the file's current
         path on disk. If a publish template is configured, a copy of the
         current session will be copied to the publish template path which
         will be the file that is published. Other users will be able to access
@@ -57,7 +55,7 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
         file to the next version after publishing.
 
         The <code>version</code> field of the resulting <b>Publish</b> in
-        ShotGrid will also reflect the version number identified in the filename.
+        Flow Production Tracking will also reflect the version number identified in the filename.
         The basic worklfow recognizes the following version formats by default:
 
         <ul>
@@ -84,9 +82,7 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
         however only the most recent publish will be available to other users.
         Warnings will be provided during validation if there are previous
         publishes.
-        """ % (
-            loader_url,
-        )
+        """ % (loader_url,)
 
     @property
     def settings(self):
@@ -109,7 +105,7 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
         """
 
         # inherit the settings from the base publish plugin
-        base_settings = super(HoudiniSessionPublishPlugin, self).settings or {}
+        base_settings = super().settings or {}
 
         # settings specific to this class
         houdini_publish_settings = {
@@ -249,13 +245,13 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
         # check to see if the next version of the work file already exists on
         # disk. if so, warn the user and provide the ability to jump to save
         # to that version now
-        (next_version_path, version) = self._get_next_version_info(path, item)
+        next_version_path, version = self._get_next_version_info(path, item)
         if next_version_path and os.path.exists(next_version_path):
 
             # determine the next available version_number. just keep asking for
             # the next one until we get one that doesn't exist.
             while os.path.exists(next_version_path):
-                (next_version_path, version) = self._get_next_version_info(
+                next_version_path, version = self._get_next_version_info(
                     next_version_path, item
                 )
 
@@ -282,14 +278,13 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
         )
         if publish_template:
             item.properties["publish_template"] = publish_template
-            self.logger.info("Populated item with publish template: %s" % (publish_template))
 
         # set the session path on the item for use by the base plugin validation
         # step. NOTE: this path could change prior to the publish phase.
         item.properties["path"] = path
 
         # run the base class validation
-        return super(HoudiniSessionPublishPlugin, self).validate(settings, item)
+        return super().validate(settings, item)
 
     def publish(self, settings, item):
         """
@@ -312,7 +307,7 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
         item.properties["path"] = path
 
         # let the base class register the publish
-        super(HoudiniSessionPublishPlugin, self).publish(settings, item)
+        super().publish(settings, item)
 
     def finalize(self, settings, item):
         """
@@ -326,7 +321,7 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
         """
 
         # do the base class finalization
-        super(HoudiniSessionPublishPlugin, self).finalize(settings, item)
+        super().finalize(settings, item)
 
         # bump the session file to the next version
         self._save_to_next_version(item.properties["path"], item, _save_session)
@@ -339,7 +334,7 @@ def _save_session(path):
     # We need to flip the slashes on Windows to avoid a bug in Houdini. If we don't
     # the next Save As dialog will have the filename box populated with the complete
     # file path.
-    sanitized_path = six.ensure_str(path.replace("\\", "/"))
+    sanitized_path = str(path.replace("\\", "/"))
     hou.hipFile.save(file_name=sanitized_path)
 
 

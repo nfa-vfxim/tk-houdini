@@ -22,6 +22,13 @@ import sgtk
 
 import hou
 
+# Houdini versions compatibility constants
+VERSION_OLDEST_COMPATIBLE = (18, 5)
+VERSION_OLDEST_SUPPORTED = (19, 5)
+VERSION_NEWEST_SUPPORTED = (21, 0)
+# Caution: make sure compatibility_dialog_min_version default value in info.yml
+# is equal to VERSION_NEWEST_SUPPORTED
+
 
 class HoudiniEngine(sgtk.platform.Engine):
     """
@@ -62,18 +69,138 @@ class HoudiniEngine(sgtk.platform.Engine):
         Main initialization entry point.
         """
 
-        self._houdini_version = hou.applicationVersion()
-
         self.logger.debug("%s: Initializing..." % self)
 
-        if self._houdini_version[0] < 14:
-            raise sgtk.TankError(
-                "Your version of Houdini is not supported. Currently, Toolkit "
-                "only supports version 14+."
-            )
+        self._houdini_version = hou.applicationVersion()
 
         # keep track of if a UI exists
         self._ui_enabled = hasattr(hou, "ui")
+
+        url_doc_supported_versions = "https://help.autodesk.com/view/SGDEV/ENU/?guid=SGD_si_integrations_engine_supported_versions_html"
+
+        # Unable to use sgtk.platform.qt from here because it has not been
+        # provisionned by tk-core yet
+        from sgtk.util.qt_importer import QtImporter
+
+        qt = QtImporter()
+
+        if self._houdini_version[0:2] < VERSION_OLDEST_COMPATIBLE:
+            # Older than the oldest compatible version
+
+            # No QMessageBox.critical here because Houdini will issue a warning
+            # message from the TankError exception
+            raise sgtk.TankError(
+                """
+Flow Production Tracking is no longer compatible with {product} versions older
+than {version}.
+
+For information regarding support engine versions, please visit this page:
+{url_doc_supported_versions}
+                """.strip().format(
+                    product="Houdini",
+                    url_doc_supported_versions=url_doc_supported_versions,
+                    version=self.version_str(VERSION_OLDEST_COMPATIBLE),
+                )
+            )
+
+        elif self._houdini_version[0:2] < VERSION_OLDEST_SUPPORTED:
+            # Older than the oldest supported version
+            self.logger.warning(
+                "Flow Production Tracking no longer supports {product} "
+                "versions older than {version}".format(
+                    product="Houdini",
+                    version=self.version_str(VERSION_OLDEST_SUPPORTED),
+                )
+            )
+
+            if self._ui_enabled:
+                qt.QtGui.QMessageBox.warning(
+                    # Can't use hou.ui.displayMessage because does not support Rich Text
+                    None,  # parent
+                    "Warning - Flow Production Tracking Compatibility!".ljust(
+                        # Padding to try to prevent the dialog being insanely narrow
+                        70
+                    ),
+                    """
+Flow Production Tracking no longer supports {product} versions older than
+{version}.
+You can continue to use Toolkit but you may experience bugs or instabilities.
+
+For information regarding support engine versions, please visit this page:
+{url_doc_supported_versions}
+                    """.strip()
+                    .replace(
+                        # Presence of \n breaks the Rich Text Format
+                        "\n",
+                        "<br>",
+                    )
+                    .format(
+                        product="Houdini",
+                        url_doc_supported_versions='<a style="color: {color}" href="{u}">{u}</a>'.format(
+                            u=url_doc_supported_versions,
+                            color=sgtk.platform.constants.SG_STYLESHEET_CONSTANTS.get(
+                                "SG_HIGHLIGHT_COLOR",
+                                "#18A7E3",
+                            ),
+                        ),
+                        version=self.version_str(VERSION_OLDEST_SUPPORTED),
+                    ),
+                )
+
+        elif self._houdini_version[0:2] <= VERSION_NEWEST_SUPPORTED:
+            # Within the range of supported versions
+            self.logger.debug(
+                "Running Houdini version {version}".format(
+                    version="{}.{}".format(*self._houdini_version[0:2]),
+                )
+            )
+
+        else:  # Newer than the newest supported version (untested)
+            self.logger.warning(
+                "Flow Production Tracking has not yet been fully tested with "
+                "{product} version {version}.".format(
+                    product="Houdini",
+                    version="{}.{}".format(*self._houdini_version[0:2]),
+                )
+            )
+
+            if self._ui_enabled and self._houdini_version[0] >= self.get_setting(
+                "compatibility_dialog_min_version"
+            ):
+                # Show the message if in UI mode and the warning dialog isn't
+                # overridden by the config.
+                qt.QtGui.QMessageBox.warning(
+                    # Can't use hou.ui.displayMessage because does not support Rich Text
+                    None,  # parent
+                    "Warning - Flow Production Tracking Compatibility!".ljust(
+                        # Padding to try to prevent the dialog being insanely narrow
+                        70
+                    ),
+                    """
+Flow Production Tracking has not yet been fully tested with {product} version
+{version}.
+You can continue to use Toolkit but you may experience bugs or instabilities.
+
+Please report any issues to:
+{support_url}
+                    """.strip()
+                    .replace(
+                        # Presence of \n breaks the Rich Text Format
+                        "\n",
+                        "<br>",
+                    )
+                    .format(
+                        product="Houdini",
+                        support_url='<a style="color: {color}" href="{u}">{u}</a>'.format(
+                            u=sgtk.support_url,
+                            color=sgtk.platform.constants.SG_STYLESHEET_CONSTANTS.get(
+                                "SG_HIGHLIGHT_COLOR",
+                                "#18A7E3",
+                            ),
+                        ),
+                        version=self.version_str(self._houdini_version),
+                    ),
+                )
 
     def pre_app_init(self):
         """
@@ -82,14 +209,17 @@ class HoudiniEngine(sgtk.platform.Engine):
         if not self._ui_enabled:
             return
 
-        if self._houdini_version[0] >= 15:
-            # In houdini 15+, we can use the dynamic menus and shelf api to
-            # properly handle cases where a file is loaded outside of a SG
-            # context. Make sure the timer that looks for current file changes
-            # is running.
-            tk_houdini = self.import_module("tk_houdini")
-            if self.get_setting("automatic_context_switch", True):
-                tk_houdini.ensure_file_change_timer_running()
+        # We can use the dynamic menus and shelf api to
+        # properly handle cases where a file is loaded outside of a PTR
+        # context. Make sure the timer that looks for current file changes
+        # is running.
+        tk_houdini = self.import_module("tk_houdini")
+        if self.get_setting("automatic_context_switch", True):
+            tk_houdini.ensure_file_change_timer_running()
+
+        self._menu_name = "Flow Production Tracking"
+        if self.get_setting("use_short_menu_name", False):
+            self._menu_name = "FPTR"
 
     def post_app_init(self):
         """
@@ -149,10 +279,7 @@ class HoudiniEngine(sgtk.platform.Engine):
 
                 # setup houdini menus
                 menu_file = self._safe_path_join(xml_tmp_dir, "MainMenuCommon")
-
-                # as of houdini 12.5 add .xml
-                if self._houdini_version > (12, 5, 0):
-                    menu_file = menu_file + ".xml"
+                menu_file = menu_file + ".xml"
 
                 # keep the reference to the menu handler for convenience so
                 # that we can access it from the menu scripts when they get
@@ -219,7 +346,7 @@ class HoudiniEngine(sgtk.platform.Engine):
                 else:
                     _setup_shelf()
 
-            if commands and self._panels_supported():
+            if commands:
 
                 # Get the list of registered commands to build panels for. The
                 # commands returned are AppCommand objects defined in
@@ -239,10 +366,13 @@ class HoudiniEngine(sgtk.platform.Engine):
                     )
                     panels.create_panels(self._panels_file)
 
-        # tell QT to interpret C strings as utf-8
-        utf8 = QtCore.QTextCodec.codecForName("utf-8")
-        QtCore.QTextCodec.setCodecForCStrings(utf8)
-        self.logger.debug("set utf-8 codec for widget text")
+            if self._houdini_version >= (21, 0, 479):
+                # Houdini 21.0+ introduced changes to how startup paths are cached, which can
+                # prevent custom menus (like the FPTR menu) from appearing unless the cache is
+                # refreshed. The call below ensures that Houdini recognizes and loads our custom
+                # menu definitions from the temporary directory, as documented in SideFx ticket
+                # 169562 (SG-40163).
+                hou.refreshStartupPathCacheDirectory(xml_tmp_dir)
 
         # Typically we only call this method for engines which don't have a
         # well defined styling. Houdini appears to use stylesheets to handle
@@ -254,52 +384,9 @@ class HoudiniEngine(sgtk.platform.Engine):
         # consistent, intended look and feel of the toolkit widgets.
         # Surprisingly, calling this does not seem to have any affect on
         # houdini itself, despite the global nature of the method.
-        #
-        # NOTE: Except for 16+. It's no longer safe and causes lots of styling
-        # problems in Houdini's UI globally.
-        if self._houdini_version < (16, 0, 0):
-            self.logger.debug("Houdini < 16 detected: applying dark look and feel.")
-            self._initialize_dark_look_and_feel()
 
         # Run a series of app instance commands at startup.
         self._run_app_instance_commands()
-
-        # In Houdini 18, we see substantial stability problems related to Qt in
-        # builds older than 18.0.348, which is the point when SideFx moved to a
-        # newer version of Qt and PySide2. We've reproduced problems on OSX and
-        # Linux, and we have reports of crashes on Windows, as well. All of these
-        # issues are no longer a problem in 348+, so we'll warn users on builds
-        # of H18 older than that.
-        if self._houdini_version[0] == 18 and self._houdini_version[-1] < 348:
-            # We need to wait until Houdini idles before showing the message.
-            # If we show it right now, it will pop up behind Houdini's splash
-            # screen, and since the dialog is modal you end up in a situation
-            # where Houdini does not continue to launch, and you can't see or
-            # dismiss the dialog to unblock it.
-            def run_when_idle():
-                hou.ui.displayMessage(
-                    text="Houdini 18 versions older than 18.0.348 are unstable when using SG "
-                    "Toolkit. Be aware that Houdini crashes may occur if attempting to use "
-                    "Toolkit apps from your current Houdini session. SG recommends updating "
-                    "Houdini to 18.0.348 or newer.",
-                    title="SG Toolkit",
-                    severity=hou.severityType.Warning,
-                )
-
-                # Have the function unregister itself. It does this by looping over
-                # all the registered callbacks and finding itself by looking for a
-                # special attribute that is added below (just before registering it
-                # as an event loop callback).
-                for callback in hou.ui.eventLoopCallbacks():
-                    if hasattr(callback, "tk_houdini_stability_msg"):
-                        hou.ui.removeEventLoopCallback(callback)
-
-            # Add the special attribute that the function will look use to find
-            # and unregister itself when executed.
-            run_when_idle.tk_houdini_stability_msg = True
-
-            # Add the function as an event loop callback.
-            hou.ui.addEventLoopCallback(run_when_idle)
 
     def destroy_engine(self):
         """
@@ -359,7 +446,7 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         """
 
-        for (panel_id, panel_dict) in self.panels.items():
+        for panel_id, panel_dict in self.panels.items():
             if not panel_id == requested_panel_id:
                 continue
 
@@ -429,48 +516,36 @@ class HoudiniEngine(sgtk.platform.Engine):
                 pane_tab.setIsCurrentTab()
                 return
 
-        # panel support differs between 14/15.
-        if self._panels_supported():
+        # if it can't be located, try to create a new tab and set the
+        # interface.
+        panel_interface = None
+        try:
+            for interface in hou.pypanel.interfacesInFile(self._panels_file):
+                if interface.name() == panel_id:
+                    panel_interface = interface
+                    break
+        except hou.OperationFailed:
+            # likely due to panels file not being a valid file, missing, etc.
+            # hopefully not the case, but try to continue gracefully.
+            self.logger.warning(
+                "Unable to find interface for panel '%s' in file: %s"
+                % (panel_id, self._panels_file)
+            )
 
-            # if it can't be located, try to create a new tab and set the
-            # interface.
-            panel_interface = None
-            try:
-                for interface in hou.pypanel.interfacesInFile(self._panels_file):
-                    if interface.name() == panel_id:
-                        panel_interface = interface
-                        break
-            except hou.OperationFailed:
-                # likely due to panels file not being a valid file, missing, etc.
-                # hopefully not the case, but try to continue gracefully.
-                self.logger.warning(
-                    "Unable to find interface for panel '%s' in file: %s"
-                    % (panel_id, self._panels_file)
-                )
+        if panel_interface:
+            # the options to create a named panel on the far right of the
+            # UI doesn't seem to be present in python. so hscript it is!
+            # Here's the docs for the hscript command:
+            #     https://www.sidefx.com/docs/houdini14.0/commands/pane
+            hou.hscript("pane -S -m pythonpanel -o -n %s" % panel_id)
+            panel = hou.ui.curDesktop().findPaneTab(panel_id)
 
-            if panel_interface:
-                # the options to create a named panel on the far right of the
-                # UI doesn't seem to be present in python. so hscript it is!
-                # Here's the docs for the hscript command:
-                #     https://www.sidefx.com/docs/houdini14.0/commands/pane
-                hou.hscript("pane -S -m pythonpanel -o -n %s" % panel_id)
-                panel = hou.ui.curDesktop().findPaneTab(panel_id)
+            panel.setActiveInterface(panel_interface)
 
-                # different calls to set the python panel interface in Houdini
-                # 14/15
-                if self._houdini_version[0] >= 15:
-                    panel.setActiveInterface(panel_interface)
-                else:
-                    # if SESI puts in a fix for setInterface, then panels
-                    # will work for houini 14. will just need to update
-                    # _panels_supported() to add the proper version. and
-                    # remove this comment.
-                    panel.setInterface(panel_interface)
-
-                # turn off the python panel toolbar to make the tk panels look
-                # more integrated. should be all good so just return
-                panel.showToolbar(False)
-                return
+            # turn off the python panel toolbar to make the tk panels look
+            # more integrated. should be all good so just return
+            panel.showToolbar(False)
+            return
 
         # if we're here, then showing as a panel was unsuccesful or not
         # supported. Just show it as a dialog.
@@ -479,6 +554,10 @@ class HoudiniEngine(sgtk.platform.Engine):
     ############################################################################
     # internal methods
     ############################################################################
+
+    @staticmethod
+    def version_str(version_tuple):
+        return ".".join([str(v) for v in version_tuple])
 
     def launch_command(self, cmd_id):
         """
@@ -613,37 +692,6 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         return otl_paths
 
-    def _panels_supported(self):
-        """
-        Returns True if panels are supported for current Houdini version.
-        """
-
-        ver = hou.applicationVersion()
-
-        # first version where saving python panel in desktop was fixed
-        if sgtk.util.is_macos():
-            # We have some serious painting problems with Python panes in
-            # H16 that are specific to OS X. We have word out to SESI, and
-            # are waiting to hear back from them as to how we might be able
-            # to proceed. Until that is sorted out, though, we're going to
-            # have to disable panel support on OS X for H16. Our panel apps
-            # appear to function just fine in dialog mode.
-            #
-            # Update: H17 resolves some of the issues, but we still have problems
-            # with item delegates not rendering consistently in the Shotgun Panel's
-            # entity views.
-            if ver >= (16, 0, 0):
-                return False
-
-        if ver >= (15, 0, 272):
-            return True
-
-        return False
-
-        # NOTE: there is an outstanding bug at SESI to backport a fix to make
-        # setInterface work properly in houdini 14. If that goes through, we'll
-        # be able to make embedded panels work in houdini 14 too.
-
     def _run_app_instance_commands(self):
         """
         Runs the series of app instance commands listed in the 'run_at_startup'
@@ -653,7 +701,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         # Build a dictionary mapping app instance names to dictionaries of
         # commands they registered with the engine.
         app_instance_commands = {}
-        for (cmd_name, value) in self.commands.items():
+        for cmd_name, value in self.commands.items():
             app_instance = value["properties"].get("app")
             if app_instance:
                 # Add entry 'command name: command function' to the command
@@ -688,7 +736,7 @@ class HoudiniEngine(sgtk.platform.Engine):
             else:
                 if not setting_cmd_name:
                     # add commands to the list for the given app instance.
-                    for (cmd_name, cmd_function) in cmd_dict.items():
+                    for cmd_name, cmd_function in cmd_dict.items():
                         self.log_debug(
                             "%s startup running app '%s' command '%s'."
                             % (self.name, app_instance_name, cmd_name)
@@ -738,7 +786,7 @@ class HoudiniEngine(sgtk.platform.Engine):
                 if self._get_dialog_parent() is None or not parent_window.isVisible():
                     return
 
-            for (cmd_name, command) in commands_to_run:
+            for cmd_name, command in commands_to_run:
                 # iterate over all the commands and execute them.
                 self.log_debug("Executing startup command: %s" % (cmd_name,))
                 command()
@@ -800,31 +848,16 @@ class HoudiniEngine(sgtk.platform.Engine):
             self, title, bundle, widget, parent
         )
 
-        h_ver = hou.applicationVersion()
-
         if dialog.parent():
             # parenting crushes the dialog's style. This seems to work to reset
             # the style to the dark look and feel in preparation for the
             # re-application below. See the comment about initializing the dark
             # look and feel above.
-            #
-            # We can only do this in Houdini 15.x or older. With the switch to
-            # Qt5/PySide2 in H16, enough has changed in Houdini's styling that
-            # we break its styling in a few places if we zero out the main window's
-            # stylesheet. We're now compensating for the problems that arise in
-            # the engine's style.qss.
-            if h_ver < (16, 0, 0):
-                dialog.parent().setStyleSheet("")
 
             # This will ensure our dialogs don't fall behind Houdini's main
             # window when they lose focus.
-            #
-            # NOTE: Setting the window flags in H18 on OSX causes a crash. Once
-            # that bug is resolved we can re-enable this. The result is that
-            # on H18 without the window flags set per the below, our dialogs
-            # will fall behind Houdini if they lose focus. This is only an issue
-            # for versions of H18 older than 18.0.348.
-            if sgtk.util.is_macos() and (h_ver[0] == 18 and h_ver >= (18, 0, 348)):
+
+            if sgtk.util.is_macos():
                 dialog.setWindowFlags(dialog.windowFlags() | QtCore.Qt.Tool)
         else:
             # no parent found, so style should be ok. this is probably,
@@ -850,14 +883,12 @@ class HoudiniEngine(sgtk.platform.Engine):
         # and combine the two into a single, unified stylesheet for the dialog
         # and widget.
         engine_root_path = self._get_engine_root_path()
-        h_major_ver = hou.applicationVersion()[0]
 
         if bundle.name in ["tk-multi-shotgunpanel", "tk-multi-publish2"]:
             if bundle.name == "tk-multi-shotgunpanel":
                 self._apply_external_styleshet(bundle, dialog)
 
-            # Styling in H16+ is very different than in earlier versions of
-            # Houdini. The result is that we have to be more careful about
+            # Styling Houdini, we have to be more careful about
             # behavior concerning stylesheets, because we might bleed into
             # Houdini itself if we change qss on parent objects or make use
             # of QStyles on the QApplication.
@@ -866,60 +897,39 @@ class HoudiniEngine(sgtk.platform.Engine):
             # already assigned to the widget. This means that the engine
             # styling is helping patch holes in any app- or framework-level
             # qss that might have already been applied.
-            if h_major_ver >= 16:
-                # We don't apply the engine's style.qss to the dialog for the panel,
-                # but we do for the publisher. This will make sure that the tank
-                # dialog's header and info slide-out widget is properly styled. The
-                # panel app doesn't show that stuff, so we don't need to worry about
-                # it.
-                if bundle.name == "tk-multi-publish2":
-                    self._apply_external_styleshet(self, dialog)
-
-                qss_file = self._get_engine_qss_file()
-                with open(qss_file, "rt") as f:
-                    qss_data = f.read()
-                    qss_data = self._resolve_sg_stylesheet_tokens(qss_data)
-                    qss_data = qss_data.replace(
-                        "{{ENGINE_ROOT_PATH}}", engine_root_path
-                    )
-                    widget.setStyleSheet(widget.styleSheet() + qss_data)
-                    widget.update()
-        else:
-            # manually re-apply any bundled stylesheet to the dialog if we are older
-            # than H16. In 16 we inherited styling problems and need to rely on the
-            # engine level qss only.
             #
-            # If we're in 16+, we also need to apply the engine-level qss.
-            if h_major_ver >= 16:
+            # We don't apply the engine's style.qss to the dialog for the panel,
+            # but we do for the publisher. This will make sure that the tank
+            # dialog's header and info slide-out widget is properly styled. The
+            # panel app doesn't show that stuff, so we don't need to worry about
+            # it.
+            if bundle.name == "tk-multi-publish2":
                 self._apply_external_styleshet(self, dialog)
-                qss = dialog.styleSheet()
-                qss = qss.replace("{{ENGINE_ROOT_PATH}}", engine_root_path)
-                dialog.setStyleSheet(qss)
-                dialog.update()
 
-            if hou.applicationVersion()[0] < 16:
-                self._apply_external_styleshet(bundle, dialog)
+            qss_file = self._get_engine_qss_file()
+            with open(qss_file, "rt") as f:
+                qss_data = f.read()
+                qss_data = self._resolve_sg_stylesheet_tokens(qss_data)
+                qss_data = qss_data.replace("{{ENGINE_ROOT_PATH}}", engine_root_path)
+                widget.setStyleSheet(widget.styleSheet() + qss_data)
+                widget.update()
+        else:
+            # manually re-apply any bundled stylesheet to the dialog
+            # We inherited styling problems and need to rely on the
+            # engine level qss only.
+            self._apply_external_styleshet(self, dialog)
+            qss = dialog.styleSheet()
+            qss = qss.replace("{{ENGINE_ROOT_PATH}}", engine_root_path)
+            dialog.setStyleSheet(qss)
+            dialog.update()
 
         # raise and activate the dialog:
         dialog.raise_()
         dialog.activateWindow()
 
-        # special case to get windows to raise the dialog
         if sgtk.util.is_windows():
-            # Anything beyond 16.5.481 bundles a PySide2 version that gives us
-            # a usable hwnd directly. We also check to make sure this is Qt5,
-            # since SideFX still offers Qt4/PySide builds of modern Houdinis.
-            if hou.applicationVersion() >= (
-                16,
-                5,
-                481,
-            ) and QtCore.__version__.startswith("5."):
-                hwnd = dialog.winId()
-            else:
-                ctypes.pythonapi.PyCObject_AsVoidPtr.restype = ctypes.c_void_p
-                ctypes.pythonapi.PyCObject_AsVoidPtr.argtypes = [ctypes.py_object]
-                hwnd = ctypes.pythonapi.PyCObject_AsVoidPtr(dialog.winId())
-            ctypes.windll.user32.SetActiveWindow(hwnd)
+            # special case to get windows to raise the dialog
+            ctypes.windll.user32.SetActiveWindow(dialog.winId())
 
         return dialog
 
@@ -951,8 +961,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         # our dialog, those styling changes we've applied either as part
         # of the app's style.qss, or tk-houdini's, everything sticks the
         # way it should.
-        if hou.applicationVersion() >= (16, 0, 0):
-            dialog.parent().setStyleSheet(dialog.parent().styleSheet())
+        dialog.parent().setStyleSheet(dialog.parent().styleSheet())
 
         # finally launch it, modal state
         status = dialog.exec_()
@@ -992,8 +1001,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         # our dialog, those styling changes we've applied either as part
         # of the app's style.qss, or tk-houdini's, everything sticks the
         # way it should.
-        if hou.applicationVersion() >= (16, 0, 0):
-            dialog.parent().setStyleSheet(dialog.parent().styleSheet())
+        dialog.parent().setStyleSheet(dialog.parent().styleSheet())
 
         # lastly, return the instantiated widget
         return widget
